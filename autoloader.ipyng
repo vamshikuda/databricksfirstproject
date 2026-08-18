@@ -1,0 +1,93 @@
+from pyspark.sql.functions import input_file_name, current_timestamp
+
+# ============================================================
+# Configuration
+# ============================================================
+
+catalog_name = "firstprojectdatabricks"
+schema_name = "bronze"
+
+storage_account = "1stprojectstorageaccount"
+container_name = "healthcare"
+
+base_path = (
+    f"abfss://{container_name}@{storage_account}.dfs.core.windows.net"
+)
+
+metadata_volume = (
+    "/Volumes/firstprojectdatabricks/bronze/metadata_files"
+)
+
+# ============================================================
+# Six source folders and target Bronze tables
+# ============================================================
+
+tables = {
+   
+    "lab-results": "lab_esults",
+    "medical-history": "medical_history",
+    "medication-data": "medication_data",
+    "patient-data": "patient_data",
+    "symptoms-data": "symptoms_data"
+}
+
+# ============================================================
+# Process each folder
+# ============================================================
+
+for source_folder, table_name in tables.items():
+
+    print(f"Processing: {source_folder}")
+
+    # ADLS source folder
+    source_path = f"{base_path}/{source_folder}"
+
+    # Unity Catalog Bronze table
+    bronze_table_name = (
+        f"{catalog_name}.{schema_name}.{table_name}"
+    )
+
+    # Separate schema and checkpoint locations
+    schema_path = (
+        f"{metadata_volume}/schema/{table_name}"
+    )
+
+    checkpoint_path = (
+        f"{metadata_volume}/checkpoints/{table_name}"
+    )
+
+    # --------------------------------------------------------
+    # Auto Loader
+    # --------------------------------------------------------
+
+    df = (
+        spark.readStream
+            .format("cloudFiles")
+            .option("cloudFiles.format", "csv")
+            .option("cloudFiles.inferColumnTypes", "true")
+            .option("cloudFiles.schemaLocation", schema_path)
+            .option("header", "true")
+            .load(source_path)
+            .withColumn("source_file", input_file_name())
+            .withColumn("ingestion_timestamp", current_timestamp())
+    )
+
+    # --------------------------------------------------------
+    # Write to Bronze Delta table
+    # --------------------------------------------------------
+
+    query = (
+        df.writeStream
+            .format("delta")
+            .outputMode("append")
+            .option("checkpointLocation", checkpoint_path)
+            .trigger(availableNow=True)
+            .toTable(bronze_table_name)
+    )
+
+    query.awaitTermination()
+
+    print(
+        f"Completed: {source_folder} -> "
+        f"{bronze_table_name}"
+    )
