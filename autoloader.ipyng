@@ -16,7 +16,10 @@ from pyspark.sql.functions import input_file_name
 bronze_table_path = f"{catalog_name}.{schema_name}.{table_name}"
 
 # Source data
-source_path = "abfss://healthcare@mydataprojectstorage.dfs.core.windows.net/appointments"
+source_path = (
+    f"abfss://healthcare@mydataprojectstorage.dfs.core.windows.net/"
+    f"{table_name}"
+)
 
 # Auto Loader metadata
 schema_path = (
